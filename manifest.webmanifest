@@ -1,0 +1,16 @@
+{
+  "name": "Wordchain",
+  "short_name": "Wordchain",
+  "description": "Dansk ordkæde-spil: sig et ord, der starter med det sidste bogstav, før tiden løber ud.",
+  "lang": "da",
+  "start_url": "./",
+  "scope": "./",
+  "display": "browser",
+  "background_color": "#ECEFF5",
+  "theme_color": "#D3263A",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

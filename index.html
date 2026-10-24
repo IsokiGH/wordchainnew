@@ -1,4 +1,4 @@
-<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#D3263A"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ordkæden"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Ordkæden</title>
+<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#D3263A"><meta name="apple-mobile-web-app-title" content="Wordchain"><meta name="application-name" content="Wordchain"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Ordkæden</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -678670,6 +678670,7 @@ function voiceBlock() {
   return voiceFail;
 }
 const voiceOn = () => settings.answer === 'voice' && !voiceBlock();
+const HOME_SCREEN_APP = (() => { try { return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches; } catch (e) { return false; } })();
 const V = { rec: null, want: false, active: false, granted: false, consumed: new Map(), last: null, timer: 0, restarts: [] };
 
 async function ensureMic() {
@@ -678689,11 +678690,9 @@ async function ensureMic() {
 function voiceStart() {
   if (!voiceOn()) { updateMic(); return; }
   V.want = true;
-  if (!V.active) {
-    // A fresh recognizer per session is more reliable on iOS than restarting an old one
-    V.rec = makeRec();
-    try { V.rec.start(); V.active = true; } catch (e) { /* already running */ }
-  }
+  // One recognizer for the whole game: iPhones handle a reused instance better than new ones
+  if (!V.rec) V.rec = makeRec();
+  if (!V.active) { try { V.rec.start(); V.active = true; } catch (e) { /* already running */ } }
   updateMic();
 }
 function voiceStop() {
@@ -678742,7 +678741,7 @@ function makeRec() {
       return;
     }
     setTimeout(() => {
-      if (V.want && !V.active && !held) { V.rec = makeRec(); try { V.rec.start(); V.active = true; } catch (e) { } updateMic(); }
+      if (V.want && !V.active && !held) { try { V.rec.start(); V.active = true; } catch (e) { } updateMic(); }
     }, 150);
   };
   return r;
@@ -678921,7 +678920,10 @@ function renderSettings() {
       if (k === 'answer' && b.dataset.v === 'voice') b.disabled = !!block;
     });
   });
-  el.voiceNote.textContent = block ? VOICE_NOTES[block] : (settings.answer === 'voice' ? VOICE_NOTES[''] : 'I skriver ordet på tastaturet, og spillet tjekker det.');
+  el.voiceNote.textContent = block ? VOICE_NOTES[block]
+    : settings.answer !== 'voice' ? 'I skriver ordet på tastaturet, og spillet tjekker det.'
+    : HOME_SCREEN_APP ? 'Virker stemmen ikke? Åbn spillet i Safari. iPhone slår mikrofonen fra i hjemmeskærm-apps.'
+    : VOICE_NOTES[''];
   el.vtest.hidden = !voiceOn();
   el.snd.checked = settings.sound;
   el.lenient.checked = settings.lenient;
