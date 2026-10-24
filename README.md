@@ -1,4 +1,4 @@
-# Ordkæden
+# Ordkæden v2
 
 Dansk ordkæde-spil til telefonen. Sig et ord, der starter med det sidste bogstav i forrige ord, før de 10 sekunder løber ud. Spillet lytter (talegenkendelse på dansk) og tjekker hvert ord i ordbogen.
 

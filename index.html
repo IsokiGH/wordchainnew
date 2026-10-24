@@ -64,6 +64,8 @@ button:disabled{cursor:default}
 .tile{aspect-ratio:1;display:grid;place-items:center;background:var(--tile);color:var(--tile-ink);border-radius:22%;box-shadow:0 3px 0 var(--tile-edge),0 6px 14px rgba(0,0,0,.08);font:900 clamp(17px,6vw,30px)/1 var(--f-display);transform:rotate(var(--rot,0deg));animation:drop .55s cubic-bezier(.2,.9,.3,1.35) both;animation-delay:calc(var(--i,0)*50ms)}
 .tile.hot{background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 0 color-mix(in srgb,var(--accent) 60%,#000),0 6px 14px rgba(0,0,0,.1)}
 @keyframes drop{from{transform:translateY(-16px) rotate(calc(var(--rot,0deg) * -2))}to{transform:translateY(0) rotate(var(--rot,0deg))}}
+.ver{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:99px;background:var(--ink);color:var(--bg);font:800 11px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase}
+.ver span{font:600 12px/1 var(--f-body);letter-spacing:0;text-transform:none;opacity:.8}
 .tagline{font:800 clamp(20px,5.6vw,28px)/1.15 var(--f-display);letter-spacing:-.01em;text-wrap:balance;margin:0}
 .lede{color:var(--muted);margin:0;max-width:52ch}
 
@@ -174,6 +176,7 @@ button:disabled{cursor:default}
 @keyframes throb{50%{transform:scale(1.05)}}
 .clock{position:absolute;left:0;right:0;top:78.5%;text-align:center;font:800 8.5cqw/1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--ink)}
 .dial.low .clock{color:var(--warn)}
+.dial.frozen .prog{opacity:.45}
 
 .chain{display:flex;align-items:center;overflow-x:auto;scrollbar-width:none;min-height:38px;padding-block:2px 4px;flex:none}
 .chain::-webkit-scrollbar{display:none}
@@ -297,6 +300,7 @@ button:disabled{cursor:default}
           <span class="tile" style="--i:6;--rot:-3deg" aria-hidden="true">E</span>
           <span class="tile hot" style="--i:7;--rot:4deg" aria-hidden="true">N</span>
         </h1>
+        <span class="ver">v2 <span>Bedre stemme og oplæsning</span></span>
         <p class="tagline">Ét ord. <span data-time>10</span> sekunder. Sidste bogstav bestemmer.</p>
         <p class="lede">Ordspillet til hele bordet. Læg telefonen i midten, og send kæden rundt.</p>
       </header>
@@ -347,6 +351,10 @@ button:disabled{cursor:default}
         <div class="field">
           <label class="field-label" for="lenient">Godkend ukendte ord<span class="field-sub">Viser en knap, når ordbogen ikke kender et ord, I er enige om</span></label>
           <input type="checkbox" class="switch" id="lenient" role="switch">
+        </div>
+        <div class="field">
+          <label class="field-label" for="speak">Oplæsning<span class="field-sub">Spillet siger ordene, næste bogstav og fejl højt. Uret står stille, mens det taler.</span></label>
+          <input type="checkbox" class="switch" id="speak" role="switch">
         </div>
         <div class="field">
           <label class="field-label" for="snd">Lyd og vibration<span class="field-sub">Nedtælling, bip og summer</span></label>
@@ -678516,7 +678524,7 @@ function isWord(w) {
 }
 
 /* ---------- State ---------- */
-let settings = { time: 10, lives: 3, sound: true, answer: 'voice', lenient: false };
+let settings = { time: 10, lives: 3, sound: true, answer: 'voice', lenient: false, speak: true };
 let players = [{ name: '', color: 0 }, { name: '', color: 1 }];
 let best = 0;
 let game = null;
@@ -678532,7 +678540,7 @@ const $ = s => document.querySelector(s);
 const app = $('#app');
 const el = {
   plist: $('#plist'), addP: $('#addP'), pCount: $('#pCount'), startNote: $('#startNote'), snd: $('#snd'),
-  lenient: $('#lenient'), voiceNote: $('#voiceNote'), vtest: $('#vtest'), micTest: $('#micTest'),
+  lenient: $('#lenient'), speak: $('#speak'), voiceNote: $('#voiceNote'), vtest: $('#vtest'), micTest: $('#micTest'),
   micTestLbl: $('#micTestLbl'), micOut: $('#micOut'), startBtn: $('#startBtn'),
   turnName: $('#turnName'), turnHearts: $('#turnHearts'), roster: $('#roster'), dial: $('#dial'),
   prog: $('#prog'), bigLetter: $('#bigLetter'), clock: $('#clock'), chain: $('#chain'),
@@ -678586,6 +678594,7 @@ function applySaved(d) {
   if (typeof s.sound === 'boolean') settings.sound = s.sound;
   if (s.answer === 'voice' || s.answer === 'type') settings.answer = s.answer;
   if (typeof s.lenient === 'boolean') settings.lenient = s.lenient;
+  if (typeof s.speak === 'boolean') settings.speak = s.speak;
   if (Array.isArray(d.players) && d.players.length) {
     players = d.players.slice(0, 8).map((p, i) => ({ name: String(p.name || '').slice(0, 16), color: Number.isInteger(p.color) ? p.color % COLORS.length : i }));
   }
@@ -678680,14 +678689,17 @@ async function ensureMic() {
 function voiceStart() {
   if (!voiceOn()) { updateMic(); return; }
   V.want = true;
-  if (!V.rec) V.rec = makeRec();
-  if (!V.active) { try { V.rec.start(); V.active = true; } catch (e) { /* already running */ } }
+  if (!V.active) {
+    // A fresh recognizer per session is more reliable on iOS than restarting an old one
+    V.rec = makeRec();
+    try { V.rec.start(); V.active = true; } catch (e) { /* already running */ }
+  }
   updateMic();
 }
 function voiceStop() {
   V.want = false;
   clearTimeout(V.timer);
-  if (V.rec && V.active) { try { V.rec.stop(); } catch (e) { } }
+  if (V.rec && V.active) { try { V.rec.abort(); } catch (e) { } }
   updateMic();
 }
 function makeRec() {
@@ -678696,7 +678708,7 @@ function makeRec() {
   r.continuous = true;
   r.interimResults = true;
   r.maxAlternatives = 5;
-  r.onstart = () => { V.active = true; V.consumed = new Map(); V.last = null; updateMic(); };
+  r.onstart = () => { if (r !== V.rec) return; V.active = true; V.consumed = new Map(); V.last = null; updateMic(); };
   r.onspeechstart = () => el.mic.classList.add('hearing');
   r.onspeechend = () => el.mic.classList.remove('hearing');
   r.onresult = onVoiceResult;
@@ -678715,6 +678727,7 @@ function makeRec() {
     if (voiceFail) { renderSettings(); if (game && game.phase === 'turn') idleMsg(); }
   };
   r.onend = () => {
+    if (r !== V.rec) return;
     V.active = false;
     el.mic.classList.remove('hearing');
     updateMic();
@@ -678729,7 +678742,7 @@ function makeRec() {
       return;
     }
     setTimeout(() => {
-      if (V.want && !V.active) { try { r.start(); V.active = true; } catch (e) { } updateMic(); }
+      if (V.want && !V.active && !held) { V.rec = makeRec(); try { V.rec.start(); V.active = true; } catch (e) { } updateMic(); }
     }, 150);
   };
   return r;
@@ -678745,8 +678758,9 @@ function consumeAll() {
   for (let i = 0; i < V.last.length; i++) V.consumed.set(i, toks(V.last[i][0].transcript).length);
 }
 function onVoiceResult(e) {
+  if (e.target && e.target !== V.rec) return;
   V.last = e.results;
-  if (!game || game.phase !== 'turn') { consumeAll(); return; }
+  if (!game || game.phase !== 'turn' || game.frozen) { consumeAll(); return; }
   clearTimeout(V.timer);
   for (let i = e.resultIndex; i < e.results.length; i++) {
     const res = e.results[i];
@@ -678758,27 +678772,111 @@ function onVoiceResult(e) {
       if (tryVoice(alts, i, skip, true)) return;
     } else {
       setMsg(`Hører: »${heard}«`, 'info');
-      V.timer = setTimeout(() => tryVoice(alts, i, skip, false), 700);
+      V.timer = setTimeout(() => tryVoice(alts, i, skip, true), 850);
     }
   }
 }
-function tryVoice(alts, i, skip, final) {
-  if (!game || game.phase !== 'turn') return false;
+// Candidate words from everything the recognizer offered, best first.
+// Exact words come first. Then "repaired" words: recognizers often mix up the first
+// consonant (krut/prut, kage/tage), so we also try the heard word with the required letter in front.
+function candidates(alts) {
+  const L = game.letter, exact = [], fixed = [];
   for (const ts of alts) {
-    for (let t = 0; t < ts.length; t++) {
-      const w = ts[t];
-      if (w.length < 3 && ts.length > 1) continue; // small talk like "er", "en" only counts when said alone
-      if (check(w) === 'ok') { V.consumed.set(i, skip + t + 1); acceptWord(w); return true; }
-    }
+    ts.forEach((w, t) => {
+      if (w.length < 3 && ts.length > 1) return; // small talk like "er", "en" only counts when said alone
+      exact.push({ w, t, exact: true });
+      if (w[0] !== L && w.length >= 3) {
+        fixed.push({ w: L + w.slice(1), t, exact: false });
+        fixed.push({ w: L + w, t, exact: false });
+      }
+    });
   }
-  if (final) {
-    const top = alts[0];
-    V.consumed.set(i, skip + top.length);
-    const cand = top.find(w => w[0] === game.letter) || top[top.length - 1];
-    if (cand) reject(cand, check(cand), cand[0] !== game.letter);
+  return exact.concat(fixed);
+}
+function tryVoice(alts, i, skip, settled) {
+  if (!game || game.phase !== 'turn' || game.frozen) return false;
+  const cands = candidates(alts);
+  for (const c of cands) {
+    if (check(c.w) === 'ok') { V.consumed.set(i, skip + c.t + 1); acceptWord(c.w); return true; }
   }
+  if (!settled) return false;
+  // Explain the most useful miss
+  const top = alts[0];
+  const verdicts = cands.map(c => ({ ...c, why: check(c.w) }));
+  const pick = verdicts.find(v => v.why === 'used')
+    || verdicts.find(v => v.exact && v.why === 'unknown' && v.w[0] === game.letter)
+    || (top.length === 1 ? { w: top[0], why: check(top[0]) } : null);
+  if (pick) reject(pick.w, pick.why, false);
   return false;
 }
+
+/* ---------- Spoken feedback ---------- */
+const TTS = window.speechSynthesis || null;
+let daVoice = null, sayId = 0, held = false, saidThisTurn = new Set();
+function pickVoice() {
+  try {
+    const vs = TTS.getVoices();
+    daVoice = vs.find(v => /^da/i.test(v.lang) && /sara|naja|helle|magnus|google/i.test(v.name)) || vs.find(v => /^da/i.test(v.lang)) || null;
+  } catch (e) { daVoice = null; }
+}
+if (TTS) { pickVoice(); try { TTS.addEventListener('voiceschanged', pickVoice); } catch (e) { } }
+function unlockSpeech() {
+  if (!TTS || !settings.speak) return;
+  try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); } catch (e) { }
+}
+// Speak a line. The clock and the microphone pause while the game talks,
+// so it never hears itself and nobody loses time listening.
+function say(text, onceKey) {
+  if (!TTS || !settings.speak || !text) return false;
+  if (onceKey) { if (saidThisTurn.has(onceKey)) return false; saidThisTurn.add(onceKey); }
+  const id = ++sayId;
+  try { TTS.cancel(); } catch (e) { }
+  holdForSpeech(true);
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'da-DK';
+  if (daVoice) u.voice = daVoice;
+  u.rate = 1.08;
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true; clearTimeout(guard);
+    if (id === sayId) holdForSpeech(false);
+  };
+  const guard = setTimeout(finish, 1400 + text.length * 85);
+  u.onend = finish; u.onerror = finish;
+  setTimeout(() => {
+    if (id !== sayId) { finish(); return; }
+    try { TTS.speak(u); } catch (e) { finish(); }
+  }, V.active ? 220 : 40);
+  return true;
+}
+function hush() {
+  sayId++;
+  try { if (TTS) TTS.cancel(); } catch (e) { }
+  holdForSpeech(false);
+}
+function holdForSpeech(on) {
+  if (on === held) return;
+  held = on;
+  if (on) {
+    if (game && game.phase === 'turn' && !game.frozen) {
+      game.frozen = true;
+      game.remaining = Math.max(0, game.deadline - performance.now());
+    }
+    if (V.want) { V.paused = true; voiceStop(); }
+  } else {
+    if (game && game.frozen) {
+      game.frozen = false;
+      if (game.phase === 'turn') game.deadline = performance.now() + game.remaining;
+    }
+    if (V.paused) {
+      V.paused = false;
+      setTimeout(() => { if (game && game.phase === 'turn' && !held) { voiceStart(); idleMsg(); } }, 250);
+    }
+  }
+  el.dial.classList.toggle('frozen', held && !!game && game.phase === 'turn');
+}
+const spokenWord = w => w.toLocaleLowerCase('da-DK');
 
 /* ---------- Screens ---------- */
 function show(id) {
@@ -678827,6 +678925,7 @@ function renderSettings() {
   el.vtest.hidden = !voiceOn();
   el.snd.checked = settings.sound;
   el.lenient.checked = settings.lenient;
+  el.speak.checked = settings.speak;
   document.querySelectorAll('[data-time]').forEach(n => { n.textContent = settings.time; });
 }
 function freeColor() {
@@ -678874,6 +678973,7 @@ document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', e
 }));
 el.snd.addEventListener('change', () => { settings.sound = el.snd.checked; save(); if (settings.sound) SFX.ok(); });
 el.lenient.addEventListener('change', () => { settings.lenient = el.lenient.checked; save(); });
+el.speak.addEventListener('change', () => { settings.speak = el.speak.checked; save(); if (settings.speak) { unlockSpeech(); say('Oplæsning er slået til.'); } });
 
 let testRec = null;
 el.micTest.addEventListener('click', async () => {
@@ -678909,6 +679009,7 @@ el.startBtn.addEventListener('click', async () => {
   if (starting) return;
   starting = true;
   audio();
+  unlockSpeech();
   ensureDict();
   if (settings.answer === 'voice' && !voiceBlock()) {
     el.startBtn.disabled = true;
@@ -678987,6 +679088,8 @@ function reject(w, why, quiet) {
   pendingForce = why === 'unknown' && settings.lenient ? w : null;
   setMsg(reasonText(w, why), why === 'short' ? 'info' : 'err', !!pendingForce);
   if (quiet || why === 'short') return;
+  const lw = spokenWord(w);
+  say({ used: `${lw} er allerede taget.`, unknown: `${lw} står ikke i ordbogen.`, letter: `${lw} starter ikke med ${up(game.letter)}.` }[why], why + ':' + w);
   el.entry.classList.remove('shake'); void el.entry.offsetWidth; el.entry.classList.add('shake');
   SFX.nope(); vibrate(30);
 }
@@ -679068,12 +679171,15 @@ function startCountdown() {
     } else {
       el.count.hidden = true;
       SFX.beep(true);
-      beginTurn();
+      const p0 = game.ps[game.cur];
+      beginTurn(`Startordet er ${spokenWord(game.word)}. ${game.ps.length > 1 ? p0.name + ' starter med' : 'Find et ord med'} ${up(game.letter)}.`);
     }
   };
   step();
 }
-function beginTurn() {
+function beginTurn(spoken) {
+  saidThisTurn = new Set();
+  game.frozen = false;
   game.phase = 'turn';
   game.remaining = game.T;
   game.deadline = performance.now() + game.T;
@@ -679083,8 +679189,14 @@ function beginTurn() {
   consumeAll();
   renderGame(true);
   renderEntry();
-  voiceStart();
-  idleMsg();
+  if (spoken && settings.speak && TTS) {
+    if (voiceOn()) V.paused = true; // the microphone starts when the game has finished talking
+    idleMsg();
+    say(spoken);
+  } else {
+    voiceStart();
+    idleMsg();
+  }
   const p = game.ps[game.cur];
   announce(`${gen(p.name)} tur. Sig et ord, der starter med ${up(game.letter)}.`);
   loop();
@@ -679093,6 +679205,7 @@ function loop() {
   cancelAnimationFrame(raf);
   const step = () => {
     if (!game || game.phase !== 'turn') return;
+    if (game.frozen) { drawClock(game.remaining); raf = requestAnimationFrame(step); return; }
     const rem = game.deadline - performance.now();
     game.remaining = rem;
     drawClock(rem);
@@ -679161,7 +679274,8 @@ function acceptWord(w) {
   game.letter = w.slice(-1);
   SFX.ok(); vibrate(15);
   game.cur = nextAlive(game.cur);
-  beginTurn();
+  const n = game.ps[game.cur];
+  beginTurn(`${spokenWord(w)}. ${game.ps.length > 1 ? n.name + ', ' : ''}${up(game.letter)}.`);
 }
 function fail(kind) {
   if (!game || game.phase !== 'turn') return;
@@ -679190,19 +679304,25 @@ function fail(kind) {
   drawClock(game.remaining);
   el.dial.classList.remove('low');
   SFX.buzz(); vibrate([90, 60, 180]);
+  const head = { time: 'Tiden er gået.', giveup: `${p.name} giver op.`, challenge: `${spokenWord(word)} tæller ikke.` }[kind];
+  const tail = game.ps.length === 1 ? (p.out ? 'Spillet er slut.' : `Du har ${p.lives} liv tilbage.`) : (p.out ? `${p.name} er ude.` : `${p.name} mister et liv.`);
+  setTimeout(() => { if (game && game.phase === 'fail') say(`${head} ${tail}`); }, 450);
   showFailModal(game.pending, true);
 }
 function continueAfterFail() {
   const pd = game && game.pending; if (!pd) return;
   game.pending = null;
   closeModal();
+  hush();
   if (pd.over) { finish(); return; }
   game.cur = pd.next;
   drawWord();
-  beginTurn();
+  const n = game.ps[game.cur];
+  beginTurn(`Nyt ord: ${spokenWord(game.word)}. ${game.ps.length > 1 ? n.name + ', ' : ''}${up(game.letter)}.`);
 }
 function pause() {
   if (!game || game.phase !== 'turn') return;
+  hush();
   cancelAnimationFrame(raf);
   voiceStop();
   game.remaining = Math.max(0, game.deadline - performance.now());
@@ -679224,9 +679344,10 @@ function resume() {
   idleMsg();
   loop();
 }
-function restart() { closeModal(); voiceStop(); newGame(); startCountdown(); }
+function restart() { closeModal(); hush(); voiceStop(); newGame(); startCountdown(); }
 function exitToMenu() {
   cancelAnimationFrame(raf); clearTimeout(cdTimer); cancelAnimationFrame(fxRaf);
+  hush();
   voiceStop();
   closeModal(); el.count.hidden = true;
   game = null;
@@ -679347,6 +679468,7 @@ function showEnd(celebrate) {
   $('#end').scrollTop = 0;
   if (celebrate && (!solo || game.newBest)) {
     SFX.win(); vibrate([40, 40, 40, 40, 120]);
+    setTimeout(() => say(solo ? `${winner.words} ord. ${game.newBest ? 'Ny rekord!' : ''}` : `${winner.name} vinder!`), 700);
     confetti([wc.c, ...COLORS.map(c => c.c), getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#D3263A']);
   }
   announce(`${$('#endTitle').textContent} ${$('#endSub').textContent}`);
